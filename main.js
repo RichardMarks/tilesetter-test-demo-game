@@ -192,48 +192,6 @@
       }
     }
 
-    const playerSprite = {
-      animations: {
-        idle: [
-          {
-            region: { srcX: 0, srcY: 0, srcW: 32, srcH: 32 },
-            collision: [
-              { x: 0, y: 0 },
-              { x: 32, y: 0 },
-              { x: 32, y: 32 },
-              { x: 0, y: 32 }
-            ]
-          },
-          {
-            region: { srcX: 32, srcY: 0, srcW: 32, srcH: 32 },
-            collision: [
-              { x: 0, y: 0 },
-              { x: 32, y: 0 },
-              { x: 32, y: 32 },
-              { x: 0, y: 32 }
-            ]
-          },
-          {
-            region: { srcX: 96, srcY: 0, srcW: 32, srcH: 32 },
-            collision: [
-              { x: 0, y: 0 },
-              { x: 32, y: 0 },
-              { x: 32, y: 32 },
-              { x: 0, y: 32 }
-            ]
-          }
-        ],
-        walk: [
-          { srcX: 0, srcY: 32, srcW: 32, srcH: 32 },
-          { srcX: 32, srcY: 32, srcW: 32, srcH: 32 },
-          { srcX: 96, srcY: 32, srcW: 32, srcH: 32 }
-        ]
-      },
-      animation: 'idle',
-      frame: 0,
-      speed: 15
-    }
-
     const animation = {
       ANIM_LOOP: 0,
       ANIM_PINGPONG: 1,
@@ -314,8 +272,8 @@
     }
 
     demo.player = {
-      x: (screen.width / 2) - 128,
-      y: (screen.height / 2) + 3,
+      x: 0,
+      y: 0,
       animations: {
         idle: animation.create({ name: 'idle', frames: [0, 1, 2], duration: 0.7 }),
         walk: animation.create({ name: 'walk', frames: [3, 4, 5], duration: 0.4 })
@@ -332,25 +290,13 @@
       },
       update (deltaTime) {
         const player = demo.player
+        // sync the player graphics with the physics body
+        player.x = demo.playerCollider.x
+        player.y = demo.playerCollider.y - 3
 
+        // update the animation
         const anim = player.animations[player.currentAnimationName]
         anim.update(deltaTime)
-        // console.log(anim.frame)
-        // console.log({ ...anim })
-        // player.x += deltaTime * 120
-        // player.y += deltaTime * 9.8 * 120
-
-        if (input.right) {
-          player.setAnimation('walk')
-          player.x += deltaTime * 120
-        } else if (input.left) {
-          player.setAnimation('walk')
-          player.x -= deltaTime * 120
-        }
-
-        if (!input.right && !input.left) {
-          player.setAnimation('idle')
-        }
       },
       draw () {
         const player = demo.player
@@ -376,6 +322,102 @@
       }
     }
 
+    demo.world = {
+      solids: [
+        // todo - parse map data to build the collision objects instead of harc-coding them
+        [0, 0, 16 * MAP_WIDTH, 16],
+        [0, 16, 16, 16 * (MAP_HEIGHT - 1)],
+        [16 * (MAP_WIDTH - 1), 16, 16, 16 * (MAP_HEIGHT - 1)],
+        [16, 16 * 9, 16 * 3, 16],
+        [16 * 9, 16 * 4, 16 * 3, 16],
+        [16 * 15, 16 * 4, 16 * 3, 16],
+        [16 * 19, 16 * 5, 16 * 3, 16],
+        [16 * 19, 16 * 3, 16, 16 * 2],
+        [16 * 22, 16 * 6, 16, 16 * 3],
+        [16 * 25, 16 * 9, 16 * 3, 16],
+        [16 * 5, 16 * 12, 16 * 19, 16 * 4],
+        [16 * 15, 16 * 10, 16 * 3, 16 * 2]
+      ],
+      ptCollides (x, y) {
+        const { solids } = demo.world
+        const { length: count } = solids
+        for (let i = 0; i < count; i += 1) {
+          const [bx, by, bw, bh] = solids[i]
+          if (x >= bx && x <= bx + bw && y >= by && y <= by + bh) {
+            return true
+          }
+        }
+        return false
+      },
+      rectCollides (x, y, w, h) {
+        const { solids } = demo.world
+        const { length: count } = solids
+        const right = x + w
+        const bottom = y + h
+        for (let i = 0; i < count; i += 1) {
+          const [bx, by, bw, bh] = solids[i]
+          if (!((bottom < by) || (y > by + bh) || (x > bx + bw) || (right < bx))) {
+            return true
+          }
+        }
+        return false
+      },
+      drawDebug () {
+        const { solids } = demo.world
+
+        screen.ctx.globalAlpha = 0.3
+        screen.ctx.fillStyle = '#f00'
+        for (let i = 0; i < solids.length; i += 1) {
+          screen.ctx.fillRect(...solids[i])
+        }
+        screen.ctx.fillStyle = '#000'
+        screen.ctx.globalAlpha = 1
+      }
+    }
+
+    demo.playerCollider = {
+      x: (screen.width / 2) - 160,
+      y: (screen.height / 2) - 64,
+      w: 32,
+      h: 32,
+
+      platform: {
+        maxSpeed: 300,
+        acceleration: 600,
+        deceleration: 600,
+        xSpeed: 0,
+        ySpeed: 0,
+        onGround: false,
+        isJumping: false
+      },
+
+      update (deltaTime) {
+        const player = demo.player
+
+        if (input.right) {
+          player.setAnimation('walk')
+          player.x += deltaTime * 120
+        } else if (input.left) {
+          player.setAnimation('walk')
+          player.x -= deltaTime * 120
+        }
+
+        if (!input.right && !input.left) {
+          player.setAnimation('idle')
+        }
+      },
+
+      drawDebug () {
+        const { x, y, w, h } = demo.playerCollider
+
+        screen.ctx.globalAlpha = 0.3
+        screen.ctx.fillStyle = '#f00'
+        screen.ctx.fillRect(x, y, w, h)
+        screen.ctx.fillStyle = '#000'
+        screen.ctx.globalAlpha = 1
+      }
+    }
+
     resolve()
   })
 
@@ -385,6 +427,7 @@
   }
 
   demo.update = deltaTime => {
+    demo.playerCollider.update(deltaTime)
     demo.player.update(deltaTime)
   }
 
@@ -392,6 +435,8 @@
     screen.clear()
     demo.tilemap.draw()
     demo.player.draw()
+    demo.world.drawDebug()
+    // demo.playerCollider.drawDebug()
   }
 
   const start = () => {
