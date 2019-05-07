@@ -66,6 +66,12 @@
     0, 0, 0, 0, 0, 0, 0, 0, 0, 12
   ]
 
+  const { min: mathMin, max: mathMax, abs: mathAbs } = Math
+
+  const sign = v => (v > 0) - (v < 0)
+  const clamp = (v, low, high) => mathMax(low, mathMin(high, v))
+  const lerp = (a, b, t) => a * (1.0 - t) + b * t
+
   const screen = RML.Screen.create(MAP_WIDTH * TILE_WIDTH, MAP_HEIGHT * TILE_HEIGHT)
 
   const input = {
@@ -82,7 +88,7 @@
         13: 'start',
         32: 'jump',
         37: 'left',
-        38: 'up',
+        38: 'jump',
         39: 'right',
         40: 'down'
       },
@@ -356,7 +362,7 @@
         const bottom = y + h
         for (let i = 0; i < count; i += 1) {
           const [bx, by, bw, bh] = solids[i]
-          if (!((bottom < by) || (y > by + bh) || (x > bx + bw) || (right < bx))) {
+          if (!((bottom <= by) || (y >= by + bh) || (x >= bx + bw) || (right <= bx))) {
             return true
           }
         }
@@ -379,12 +385,13 @@
       x: (screen.width / 2) - 160,
       y: (screen.height / 2) - 64,
       w: 32,
-      h: 32,
+      h: 24,
 
       platform: {
-        maxSpeed: 300,
+        gravity: 300,
+        maxSpeed: 120,
+        jumpSpeed: 160,
         acceleration: 600,
-        deceleration: 600,
         xSpeed: 0,
         ySpeed: 0,
         onGround: false,
@@ -393,18 +400,87 @@
 
       update (deltaTime) {
         const player = demo.player
+        const world = demo.world
+        const { ptCollides, rectCollides } = world
+        const collider = demo.playerCollider
+        const platform = collider.platform
+
+        let animationChange = false
+        let nextAnim = ''
+
+        // ground check
+        platform.onGround = rectCollides(collider.x, collider.y + 1, collider.w, collider.h)
+
+        if (platform.onGround) {
+          // we are on the ground, stop jumping / vertical motion
+          platform.isJumping = false
+          platform.ySpeed = 0
+
+          if (input.jump) {
+            platform.ySpeed = -platform.jumpSpeed
+            platform.isJumping = true
+            collider.y -= 1
+          }
+        } else {
+          // we are in the air, apply gravity
+          platform.ySpeed += platform.gravity * deltaTime
+          if (platform.isJumping && !input.jump) {
+            platform.ySpeed += platform.gravity * deltaTime
+            platform.ySpeed += platform.gravity * deltaTime
+          }
+
+          // head check
+          if (rectCollides(collider.x, collider.y - 1, collider.w, collider.h)) {
+            // step vertical motion
+            platform.isJumping = false
+            platform.ySpeed = 0
+            collider.y += 1
+          }
+        }
 
         if (input.right) {
-          player.setAnimation('walk')
-          player.x += deltaTime * 120
+          nextAnim = 'walk'
+          animationChange = true
+          platform.xSpeed += platform.acceleration * deltaTime
         } else if (input.left) {
-          player.setAnimation('walk')
-          player.x -= deltaTime * 120
+          nextAnim = 'walk'
+          animationChange = true
+          platform.xSpeed -= platform.acceleration * deltaTime
         }
 
         if (!input.right && !input.left) {
-          player.setAnimation('idle')
+          platform.xSpeed = 0
+          nextAnim = 'idle'
+          animationChange = true
         }
+
+        platform.xSpeed = clamp(platform.xSpeed, -platform.maxSpeed, platform.maxSpeed)
+        platform.ySpeed = clamp(platform.ySpeed, -platform.jumpSpeed, platform.gravity)
+
+        const moveX = platform.xSpeed * deltaTime
+        const moveY = platform.ySpeed * deltaTime
+
+        const xDist = mathAbs(moveX)
+        const yDist = mathAbs(moveY)
+
+        // step the x axis
+        for (let i = 0; i < xDist; i += 1) {
+          const step = sign(moveX)
+          if (!rectCollides(collider.x + step, collider.y, collider.w, collider.h)) {
+            collider.x += step
+          }
+        }
+
+        // step the y axis
+        for (let i = 0; i < yDist; i += 1) {
+          const step = sign(moveY)
+          if (!rectCollides(collider.x, collider.y + step, collider.w, collider.h)) {
+            collider.y += step
+          }
+        }
+
+        // update animation
+        animationChange && player.setAnimation(nextAnim)
       },
 
       drawDebug () {
@@ -413,8 +489,28 @@
         screen.ctx.globalAlpha = 0.3
         screen.ctx.fillStyle = '#f00'
         screen.ctx.fillRect(x, y, w, h)
-        screen.ctx.fillStyle = '#000'
+        screen.ctx.fillStyle = '#fff'
+
         screen.ctx.globalAlpha = 1
+        screen.ctx.scale(0.25, 0.25)
+        screen.ctx.font = '48px monospace'
+        const { platform } = demo.playerCollider
+        const {
+          onGround,
+          isJumping,
+          xSpeed,
+          ySpeed
+        } = platform
+        const st = { xSpeed, ySpeed, onGround, isJumping}
+        const lines = Object.keys(st).map(k => `${k}: ${st[k]}`)
+        lines.forEach((line, i) => {
+          screen.ctx.fillText(line, 8, 64 + (i * 48))
+        })
+
+        screen.ctx.scale(4.0, 4.0)
+        screen.ctx.fillStyle = '#000'
+
+
       }
     }
 
@@ -435,7 +531,7 @@
     screen.clear()
     demo.tilemap.draw()
     demo.player.draw()
-    demo.world.drawDebug()
+    // demo.world.drawDebug()
     // demo.playerCollider.drawDebug()
   }
 
