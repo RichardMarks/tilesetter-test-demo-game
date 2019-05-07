@@ -68,6 +68,61 @@
 
   const screen = RML.Screen.create(MAP_WIDTH * TILE_WIDTH, MAP_HEIGHT * TILE_HEIGHT)
 
+  const input = {
+    up: false,
+    down: false,
+    left: false,
+    right: false,
+    jump: false,
+    start: false,
+
+    kb: {
+      codes: [13, 32, 37, 38, 39, 40],
+      mapping: {
+        13: 'start',
+        32: 'jump',
+        37: 'left',
+        38: 'up',
+        39: 'right',
+        40: 'down'
+      },
+      onPress (keyEvent) {
+        const { which } = keyEvent
+        if (input.kb.codes.includes(which)) {
+          keyEvent.preventDefault()
+          if (which in input.kb.mapping) {
+            input[input.kb.mapping[which]] = true
+            console.log('mapped key press', which, input.kb.mapping[which])
+          }
+        } else {
+          console.log('unmapped key press', which)
+        }
+      },
+      onRelease (keyEvent) {
+        const { which } = keyEvent
+        if (input.kb.codes.includes(which)) {
+          keyEvent.preventDefault()
+          if (which in input.kb.mapping) {
+            input[input.kb.mapping[which]] = false
+            console.log('mapped key release', which, input.kb.mapping[which])
+          }
+        } else {
+          console.log('unmapped key release', which)
+        }
+      }
+    },
+
+    create () {
+      window.addEventListener('keydown', input.kb.onPress)
+      window.addEventListener('keyup', input.kb.onRelease)
+    },
+
+    destroy () {
+      window.removeEventListener('keydown', input.kb.onPress)
+      window.removeEventListener('keyup', input.kb.onRelease)
+    }
+  }
+
   const demo = {}
 
   const resources = { images: {} }
@@ -96,6 +151,8 @@
 
   const create = () => new Promise((resolve, reject) => {
     console.log('creating...')
+
+    input.create()
 
     const tilesAcross = resources.images.tileset.width / TILE_WIDTH
     const tilesDown = resources.images.tileset.height / TILE_HEIGHT
@@ -263,7 +320,16 @@
         idle: animation.create({ name: 'idle', frames: [0, 1, 2], duration: 0.7 }),
         walk: animation.create({ name: 'walk', frames: [3, 4, 5], duration: 0.4 })
       },
-      currentAnimationName: 'walk',
+      currentAnimationName: 'idle',
+      setAnimation (name) {
+        const player = demo.player
+        if (player.currentAnimationName !== name) {
+          player.currentAnimationName = name
+          const anim = player.animations[player.currentAnimationName]
+          anim.frame = 0
+          anim.playing = true
+        }
+      },
       update (deltaTime) {
         const player = demo.player
 
@@ -272,7 +338,19 @@
         // console.log(anim.frame)
         // console.log({ ...anim })
         // player.x += deltaTime * 120
-        // player.y -= deltaTime * 12
+        // player.y += deltaTime * 9.8 * 120
+
+        if (input.right) {
+          player.setAnimation('walk')
+          player.x += deltaTime * 120
+        } else if (input.left) {
+          player.setAnimation('walk')
+          player.x -= deltaTime * 120
+        }
+
+        if (!input.right && !input.left) {
+          player.setAnimation('idle')
+        }
       },
       draw () {
         const player = demo.player
