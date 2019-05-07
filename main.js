@@ -135,20 +135,209 @@
       }
     }
 
+    const playerSprite = {
+      animations: {
+        idle: [
+          {
+            region: { srcX: 0, srcY: 0, srcW: 32, srcH: 32 },
+            collision: [
+              { x: 0, y: 0 },
+              { x: 32, y: 0 },
+              { x: 32, y: 32 },
+              { x: 0, y: 32 }
+            ]
+          },
+          {
+            region: { srcX: 32, srcY: 0, srcW: 32, srcH: 32 },
+            collision: [
+              { x: 0, y: 0 },
+              { x: 32, y: 0 },
+              { x: 32, y: 32 },
+              { x: 0, y: 32 }
+            ]
+          },
+          {
+            region: { srcX: 96, srcY: 0, srcW: 32, srcH: 32 },
+            collision: [
+              { x: 0, y: 0 },
+              { x: 32, y: 0 },
+              { x: 32, y: 32 },
+              { x: 0, y: 32 }
+            ]
+          }
+        ],
+        walk: [
+          { srcX: 0, srcY: 32, srcW: 32, srcH: 32 },
+          { srcX: 32, srcY: 32, srcW: 32, srcH: 32 },
+          { srcX: 96, srcY: 32, srcW: 32, srcH: 32 }
+        ]
+      },
+      animation: 'idle',
+      frame: 0,
+      speed: 15
+    }
+
+    const animation = {
+      ANIM_LOOP: 0,
+      ANIM_PINGPONG: 1,
+      ANIM_ONCE: 2,
+
+      create ({ name, duration = 1, frames, type = 0, onComplete, onLoop, onPing, onPong }) {
+        const anim = {
+          name,
+          type,
+          duration: duration / frames.length,
+          playing: false,
+          complete: false,
+          ping: false,
+          time: 0,
+          frame: 0,
+          frames: frames.slice()
+        }
+
+        const tickAnim = deltaTime => {
+          anim.time += deltaTime
+          return anim.time >= anim.duration
+        }
+
+        const nextFrame = () => {
+          anim.frame += 1
+          return anim.frame >= anim.frames.length
+        }
+
+        const previousFrame = () => {
+          anim.frame -= 1
+          return anim.frame < 0
+        }
+
+        if (type === animation.ANIM_LOOP) {
+          anim.update = deltaTime => {
+            if (anim.playing) {
+              if (tickAnim(deltaTime)) {
+                anim.time = 0
+                if (nextFrame()) {
+                  anim.frame = 0
+                  onLoop && onLoop()
+                }
+              }
+            }
+          }
+        } else if (type === animation.ANIM_PINGPONG) {
+          anim.update = deltaTime => {
+            if (anim.playing) {
+              if (tickAnim(deltaTime)) {
+                const frameChange = anim.ping ? previousFrame : nextFrame
+                if (frameChange()) {
+                  anim.frame = anim.ping ? anim.frames.length - 1 : 0
+                  anim.ping = !anim.ping
+                  anim.ping && onPing && onPing()
+                  !anim.ping && onPong && onPong()
+                }
+              }
+            }
+          }
+        } else if (type === animation.ANIM_ONCE) {
+          anim.update = deltaTime => {
+            if (anim.playing) {
+              if (tickAnim(deltaTime)) {
+                anim.time = 0
+                if (nextFrame()) {
+                  anim.frame = anim.frames.length - 1
+                  anim.playing = false
+                  anim.complete = true
+                  onComplete && onComplete()
+                }
+              }
+            }
+          }
+        }
+
+        return anim
+      }
+    }
+
+    demo.player = {
+      x: (screen.width / 2) - 128,
+      y: (screen.height / 2) + 3,
+      animations: {
+        idle: animation.create({ name: 'idle', frames: [0, 1, 2], duration: 0.7 }),
+        walk: animation.create({ name: 'walk', frames: [3, 4, 5], duration: 0.4 })
+      },
+      currentAnimationName: 'walk',
+      update (deltaTime) {
+        const player = demo.player
+
+        const anim = player.animations[player.currentAnimationName]
+        anim.update(deltaTime)
+        // console.log(anim.frame)
+        // console.log({ ...anim })
+        // player.x += deltaTime * 120
+        // player.y -= deltaTime * 12
+      },
+      draw () {
+        const player = demo.player
+        const anim = player.animations[player.currentAnimationName]
+        const frameId = anim.frames[anim.frame]
+
+        const srcX = ~~(frameId % 3) * 32
+        const srcY = ~~(frameId / 3) * 32
+
+        // console.log({ frame: anim.frame, srcX, srcY })
+
+        blit({
+          image: resources.images.player,
+          srcX,
+          srcY,
+          srcW: 32,
+          srcH: 32,
+          dstX: ~~(demo.player.x),
+          dstY: ~~(demo.player.y),
+          dstW: 32,
+          dstH: 32
+        })
+      }
+    }
+
     resolve()
   })
+
+  demo.start = () => {
+    console.log('demo start')
+    demo.player.animations[demo.player.currentAnimationName].playing = true
+  }
+
+  demo.update = deltaTime => {
+    demo.player.update(deltaTime)
+  }
+
+  demo.draw = () => {
+    screen.clear()
+    demo.tilemap.draw()
+    demo.player.draw()
+  }
 
   const start = () => {
     console.log('starting...')
 
-    screen.clear()
-    demo.tilemap.draw()
+    const getTicks = () => (new Date()).getTime()
+    let lastTime = getTicks()
+    demo.start && demo.start()
+    const mainLoop = () => {
+      const currentTime = getTicks()
+      const deltaTime = (currentTime - lastTime) * 0.001
+      demo.update && demo.update(deltaTime)
+      lastTime = currentTime
+      demo.draw && demo.draw()
+      window.requestAnimationFrame(mainLoop)
+    }
+    mainLoop()
   }
 
   document.addEventListener('DOMContentLoaded', () => {
     console.log('DOM ready')
     const manifest = [
-      { id: 'tileset', type: 'image', src: 'set-1.png' }
+      { id: 'tileset', type: 'image', src: 'set-1.png' },
+      { id: 'player', type: 'image', src: 'player.png' }
     ]
     preload(manifest).then(create).then(start)
   })
