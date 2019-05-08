@@ -98,7 +98,7 @@
           keyEvent.preventDefault()
           if (which in input.kb.mapping) {
             input[input.kb.mapping[which]] = true
-            console.log('mapped key press', which, input.kb.mapping[which])
+            // console.log('mapped key press', which, input.kb.mapping[which])
           }
         } else {
           console.log('unmapped key press', which)
@@ -110,7 +110,7 @@
           keyEvent.preventDefault()
           if (which in input.kb.mapping) {
             input[input.kb.mapping[which]] = false
-            console.log('mapped key release', which, input.kb.mapping[which])
+            // console.log('mapped key release', which, input.kb.mapping[which])
           }
         } else {
           console.log('unmapped key release', which)
@@ -285,6 +285,7 @@
         walk: animation.create({ name: 'walk', frames: [3, 4, 5], duration: 0.4 })
       },
       currentAnimationName: 'idle',
+      mirror: false,
       setAnimation (name) {
         const player = demo.player
         if (player.currentAnimationName !== name) {
@@ -293,6 +294,16 @@
           anim.frame = 0
           anim.playing = true
         }
+      },
+      pauseAnim () {
+        const player = demo.player
+        const anim = player.animations[player.currentAnimationName]
+        anim.playing = false
+      },
+      resumeAnim () {
+        const player = demo.player
+        const anim = player.animations[player.currentAnimationName]
+        anim.playing = true
       },
       update (deltaTime) {
         const player = demo.player
@@ -314,17 +325,37 @@
 
         // console.log({ frame: anim.frame, srcX, srcY })
 
-        blit({
-          image: resources.images.player,
-          srcX,
-          srcY,
-          srcW: 32,
-          srcH: 32,
-          dstX: ~~(demo.player.x),
-          dstY: ~~(demo.player.y),
-          dstW: 32,
-          dstH: 32
-        })
+        if (player.mirror) {
+          const px = ~~(demo.player.x)
+          const py = ~~(demo.player.y)
+          screen.ctx.save()
+          screen.ctx.translate(px + 32, py)
+          screen.ctx.scale(-1, 1)
+          blit({
+            image: resources.images.player,
+            srcX,
+            srcY,
+            srcW: 32,
+            srcH: 32,
+            dstX: 0,
+            dstY: 0,
+            dstW: 32,
+            dstH: 32
+          })
+          screen.ctx.restore()
+        } else {
+          blit({
+            image: resources.images.player,
+            srcX,
+            srcY,
+            srcW: 32,
+            srcH: 32,
+            dstX: ~~(demo.player.x),
+            dstY: ~~(demo.player.y),
+            dstW: 32,
+            dstH: 32
+          })
+        }
       }
     }
 
@@ -409,9 +440,15 @@
         let nextAnim = ''
 
         // ground check
-        platform.onGround = rectCollides(collider.x, collider.y + 1, collider.w, collider.h)
+        const willBeOnGround = rectCollides(collider.x, collider.y + 1, collider.w, collider.h)
+        if (!player.onGround && willBeOnGround) {
+          // landing
+          player.resumeAnim()
+        }
+        platform.onGround = willBeOnGround
 
         if (platform.onGround) {
+          player.animation
           // we are on the ground, stop jumping / vertical motion
           platform.isJumping = false
           platform.ySpeed = 0
@@ -420,6 +457,7 @@
             platform.ySpeed = -platform.jumpSpeed
             platform.isJumping = true
             collider.y -= 1
+            player.pauseAnim()
           }
         } else {
           // we are in the air, apply gravity
@@ -439,10 +477,12 @@
         }
 
         if (input.right) {
+          player.mirror = false
           nextAnim = 'walk'
           animationChange = true
           platform.xSpeed += platform.acceleration * deltaTime
         } else if (input.left) {
+          player.mirror = true
           nextAnim = 'walk'
           animationChange = true
           platform.xSpeed -= platform.acceleration * deltaTime
