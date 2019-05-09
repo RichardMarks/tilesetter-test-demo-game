@@ -7,7 +7,7 @@
   // FIXME: read from an environment variable or something
   const devmode = true
 
-  const { min: mathMin, max: mathMax, abs: mathAbs } = Math
+  const { min: mathMin, max: mathMax, abs: mathAbs, sqrt: mathSqrt } = Math
 
   const sign = v => (v > 0) - (v < 0)
   const clamp = (v, low, high) => mathMax(low, mathMin(high, v))
@@ -103,6 +103,7 @@
 
     parseLevel (levelJSON, levelNumber) {
       const {
+        enemies,
         height,
         items,
         name,
@@ -131,6 +132,10 @@
       // load item data
       console.log(`loading item data... ${items.length} items`)
       demo.items.instances = items.map((item, index) => ({ ...item, id: index }))
+
+      // load enemy data
+      console.log(`loading enemy data... ${enemies.length} enemies`)
+      demo.enemies.instances = enemies.map((enemy, index) => demo.enemyFactory.load({...enemy, id: index }))
 
       // position the player
       console.log(`positioning player at ${playerX}, ${playerY}`)
@@ -321,85 +326,316 @@
       }
     }
 
-    demo.player = {
-      x: 0,
-      y: 0,
-      animations: {
-        idle: animation.create({ name: 'idle', frames: [0, 1, 2], duration: 0.7 }),
-        walk: animation.create({ name: 'walk', frames: [3, 4, 5], duration: 0.4 })
-      },
-      currentAnimationName: 'idle',
-      mirror: false,
-      setAnimation (name) {
-        const player = demo.player
-        if (player.currentAnimationName !== name) {
-          player.currentAnimationName = name
-          const anim = player.animations[player.currentAnimationName]
-          anim.frame = 0
-          anim.playing = true
-        }
-      },
-      pauseAnim () {
-        const player = demo.player
-        const anim = player.animations[player.currentAnimationName]
-        anim.playing = false
-      },
-      resumeAnim () {
-        const player = demo.player
-        const anim = player.animations[player.currentAnimationName]
-        anim.playing = true
-      },
-      update (deltaTime) {
-        const player = demo.player
-        // sync the player graphics with the physics body
-        player.x = demo.playerCollider.x
-        player.y = demo.playerCollider.y - 3
+    const animatedsprite = {
+      create ({ x, y, w, h, imageId }) {
+        const sprite = {
+          x,
+          y,
+          w,
+          h,
+          imageId,
+          animations: {},
+          currentAnimationName: '',
+          mirror: false,
+          visible: true,
+          addAnimation (name, anim) {
+            if (name in sprite.animations) {
+              console.warn(`possibly not intentionally replacing animation ${name} with new animation!`)
+            }
+            sprite.animations[name] = anim
+          },
+          setAnimation (name) {
+            if (!name in sprite.animations) {
+              throw new Error(`animation ${name} not found`)
+            }
+            if (sprite.currentAnimationName !== name) {
+              sprite.currentAnimationName = name
+              const anim = sprite.animations[name]
+              anim.frame = 0
+              anim.playing = true
+            }
+          },
+          pauseAnim () {
+            const anim = sprite.animations[sprite.currentAnimationName]
+            anim && (anim.playing = false)
+          },
+          resumeAnim () {
+            const anim = sprite.animations[sprite.currentAnimationName]
+            anim && (anim.playing = true)
+          },
+          update (deltaTime) {
+            sprite.onUpdate && typeof sprite.onUpdate === 'function' && sprite.onUpdate(deltaTime)
 
-        // update the animation
-        const anim = player.animations[player.currentAnimationName]
-        anim.update(deltaTime)
+            const anim = sprite.animations[sprite.currentAnimationName]
+            anim && anim.update(deltaTime)
+          },
+          draw () {
+            sprite.onDraw && typeof sprite.onDraw === 'function' && sprite.onDraw()
+
+            if (
+              !sprite.visible ||
+              sprite.x > SCREEN_WIDTH ||
+              sprite.y > SCREEN_HEIGHT ||
+              sprite.x + sprite.w < 0 ||
+              sprite.y + sprite.h < 0 ||
+              !sprite.currentAnimationName ||
+              sprite.currentAnimationName === '') {
+              return
+            }
+
+            const { x, y, w, h, imageId } = sprite
+
+            const anim = sprite.animations[sprite.currentAnimationName]
+            const frameId = anim.frames[anim.frame]
+            const frameCount = anim.frames.length
+
+            const image = resources.images[imageId]
+            if (!image) {
+              throw new Error(`image resource not found: ${imageId}`)
+            }
+
+            const srcX = ~~(frameId % frameCount) * w
+            const srcY = ~~(frameId / frameCount) * h
+
+            if (sprite.mirror) {
+              const px = ~~(x)
+              const py = ~~(y)
+              screen.ctx.save()
+              screen.ctx.translate(px + w, py)
+              screen.ctx.scale(-1, 1)
+              blit({
+                image,
+                srcX,
+                srcY,
+                srcW: w,
+                srcH: h,
+                dstX: 0,
+                dstY: 0,
+                dstW: w,
+                dstH: h
+              })
+              screen.ctx.restore()
+            } else {
+              blit({
+                image,
+                srcX,
+                srcY,
+                srcW: w,
+                srcH: h,
+                dstX: ~~(x),
+                dstY: ~~(y),
+                dstW: w,
+                dstH: h
+              })
+            }
+          }
+        }
+        return sprite
+      }
+    }
+
+    const physicsbody = {
+      create ({ x, y, w, h }) {
+        const body = {
+          x,
+          y,
+          w,
+          h,
+          update (deltaTime) {
+            body.onUpdate && typeof body.onUpdate === 'function' && body.onUpdate(deltaTime)
+          }
+        }
+        return body
+      }
+    }
+
+    demo.player = animatedsprite.create({ x: 0, y: 0, w: 32, h: 32, imageId: 'player' })
+    demo.player.addAnimation('idle', animation.create({ name: 'idle', frames: [0, 1, 2], duration: 0.7 }))
+    demo.player.addAnimation('walk', animation.create({ name: 'walk', frames: [3, 4, 5], duration: 0.4 }))
+    demo.player.setAnimation('idle')
+    demo.player.onUpdate = deltaTime => {
+      // sync the player graphics with the physics body
+      demo.player.x = demo.playerCollider.x
+      demo.player.y = demo.playerCollider.y - 3
+    }
+
+    demo.enemyFactory = {
+      load (instanceData) {
+        const factory = demo.enemyFactory.factories[instanceData.type]
+        if (factory) {
+          return factory(instanceData)
+        }
+        console.log(`unknown enemy factory: ${instanceData.type}`)
+        return null
+      },
+      factories: {
+        flying_enemy: (instanceData) => {
+          const { x, y, type } = instanceData
+          const enemy = {
+            ...instanceData,
+            sprite: animatedsprite.create({ x, y, w: 32, h: 32, imageId: type }),
+            collider: physicsbody.create({ x, y, w: 32, h: 32 }),
+            ai: {
+              state: 'wait',
+              time: 0,
+              waitTime: 3,
+              attackTime: 1,
+              startX: x,
+              startY: y
+            }
+          }
+          enemy.sprite.addAnimation('idle', animation.create({ name: 'idle', frames: [0, 1, 2], duration: 0.2 }))
+          enemy.sprite.setAnimation('idle')
+          enemy.sprite.onUpdate = deltaTime => {
+            enemy.sprite.x = enemy.collider.x
+            enemy.sprite.y = enemy.collider.y
+          }
+          enemy.collider.onUpdate = deltaTime => {
+            switch (enemy.ai.state) {
+              case 'wait': {
+                enemy.ai.time += deltaTime
+                if (enemy.ai.time >= enemy.ai.waitTime) {
+                  enemy.ai.time -= enemy.ai.waitTime
+                  enemy.ai.state = 'seek'
+                }
+              } break
+              case 'seek': {
+                enemy.ai.targetX = demo.playerCollider.x
+                enemy.ai.targetY = demo.playerCollider.y
+                const ecx = enemy.collider.x // + enemy.collider.w * 0.5
+                const ecy = enemy.collider.y // + enemy.collider.h * 0.5
+                const tx = enemy.ai.targetX
+                const ty = enemy.ai.targetY
+                const dx = tx - ecx
+                const dy = ty - ecy
+                const dx2 = dx * dx
+                const dy2 = dy * dy
+                const dist = mathSqrt(dx2 + dy2)
+                if (dist < 200) {
+                  enemy.ai.state = 'attack'
+                  enemy.ai.moveX = (dx / dist) * 100 * deltaTime
+                  enemy.ai.moveY = (dy / dist) * 100 * deltaTime
+                }
+              } break
+              case 'attack': {
+                enemy.sprite.mirror = enemy.ai.moveX > 0
+                enemy.collider.x += enemy.ai.moveX
+                enemy.collider.y += enemy.ai.moveY
+                if (mathAbs(enemy.collider.x - enemy.ai.targetX) + mathAbs(enemy.collider.y - enemy.ai.targetY) <= 16) {
+                  enemy.ai.state = 'return'
+                }
+
+                // enemy.ai.time += deltaTime
+                // if (enemy.ai.time >= enemy.ai.attackTime) {
+                //   enemy.ai.time -= enemy.ai.attackTime
+                //   enemy.ai.state = 'return'
+                // }
+              } break
+              case 'return': {
+                const ecx = enemy.collider.x // + enemy.collider.w * 0.5
+                const ecy = enemy.collider.y // + enemy.collider.h * 0.5
+                const tx = enemy.ai.startX
+                const ty = enemy.ai.startY
+                const dx = tx - ecx
+                const dy = ty - ecy
+                const dx2 = dx * dx
+                const dy2 = dy * dy
+                const dist = mathSqrt(dx2 + dy2)
+                enemy.ai.state = 'returning'
+                enemy.ai.moveX = (dx / dist) * 48 * deltaTime
+                enemy.ai.moveY = (dy / dist) * 48 * deltaTime
+              } break
+              case 'returning': {
+                enemy.sprite.mirror = enemy.ai.moveX > 0
+                enemy.collider.x += enemy.ai.moveX
+                enemy.collider.y += enemy.ai.moveY
+                if (mathAbs(enemy.collider.x - enemy.ai.startX) + mathAbs(enemy.collider.y - enemy.ai.startY) <= 16) {
+                  enemy.collider.x = enemy.ai.startX
+                  enemy.collider.y = enemy.ai.startY
+                  enemy.ai.state = 'wait'
+                }
+              } break
+              default: break
+            }
+          }
+          return enemy
+        }
+      }
+    }
+
+    demo.enemies = {
+      instances: [],
+      removed: [],
+      update (deltaTime) {
+        demo.enemies.instances.forEach(instance => demo.enemies.updateInstance(instance, deltaTime))
+        demo.enemies.removed.forEach(instance => {
+          const start = demo.enemies.instances.findIndex(inst => inst.id === instance.id)
+          const deleteCount = 1
+          if (start >= 0) {
+            demo.enemies.instances.splice(start, deleteCount)
+          }
+        })
+        demo.enemies.removed = []
       },
       draw () {
-        const player = demo.player
-        const anim = player.animations[player.currentAnimationName]
-        const frameId = anim.frames[anim.frame]
-
-        const srcX = ~~(frameId % 3) * 32
-        const srcY = ~~(frameId / 3) * 32
-
-        // console.log({ frame: anim.frame, srcX, srcY })
-
-        if (player.mirror) {
-          const px = ~~(demo.player.x)
-          const py = ~~(demo.player.y)
-          screen.ctx.save()
-          screen.ctx.translate(px + 32, py)
-          screen.ctx.scale(-1, 1)
-          blit({
-            image: resources.images.player,
-            srcX,
-            srcY,
-            srcW: 32,
-            srcH: 32,
-            dstX: 0,
-            dstY: 0,
-            dstW: 32,
-            dstH: 32
-          })
-          screen.ctx.restore()
-        } else {
-          blit({
-            image: resources.images.player,
-            srcX,
-            srcY,
-            srcW: 32,
-            srcH: 32,
-            dstX: ~~(demo.player.x),
-            dstY: ~~(demo.player.y),
-            dstW: 32,
-            dstH: 32
-          })
+        demo.enemies.instances.forEach(demo.enemies.drawInstance)
+      },
+      updateInstance (instance, deltaTime) {
+        const { collider, sprite, removed } = instance
+        if (removed) {
+          // removed enemies should not be updated
+          return
         }
+
+        collider && collider.update && typeof collider.update === 'function' && collider.update(deltaTime)
+        sprite && sprite.update && typeof sprite.update === 'function' && sprite.update(deltaTime)
+
+        // if (instance.type === 'fruit') {
+        //   const { playerCollider: collider } = demo
+        //   const { x, y, w, h } = collider
+        //   const bottom = y + h
+        //   const right = x + w
+        //   const { x: bx, y: by } = instance
+        //   const image = resources.images[instance.type]
+        //   const bw = image.width
+        //   const bh = image.height
+        //   if (!((bottom <= by) || (y >= by + bh) || (x >= bx + bw) || (right <= bx))) {
+        //     console.log('collided with enemy')
+        //     instance.removed = true
+        //     demo.enemies.removed.push(instance)
+        //   }
+        // }
+      },
+      drawInstance (instance) {
+        const { sprite, removed } = instance
+        if (removed) {
+          // removed enemies should not be drawn
+          return
+        }
+
+        sprite && sprite.draw && typeof sprite.draw === 'function' && sprite.draw()
+      },
+      drawDebug () {
+        const { instances } = demo.enemies
+
+        screen.ctx.globalAlpha = 0.3
+        screen.ctx.fillStyle = '#f00'
+        for (let i = 0; i < instances.length; i += 1) {
+          const { collider, ai } = instances[i]
+          const { x, y, w, h } = collider
+          screen.ctx.fillRect(x, y, w, h)
+          if (ai) {
+            screen.ctx.beginPath()
+            screen.ctx.strokeStyle = '#fff'
+            screen.ctx.moveTo(ai.startX, 0)
+            screen.ctx.lineTo(ai.startX, SCREEN_HEIGHT)
+            screen.ctx.moveTo(0, ai.startY)
+            screen.ctx.lineTo(SCREEN_WIDTH, ai.startY)
+            screen.ctx.stroke()
+          }
+        }
+        screen.ctx.fillStyle = '#000'
+        screen.ctx.globalAlpha = 1
       }
     }
 
@@ -670,12 +906,15 @@
     demo.playerCollider.update(deltaTime)
     demo.player.update(deltaTime)
     demo.items.update(deltaTime)
+    demo.enemies.update(deltaTime)
   }
 
   demo.draw = () => {
     screen.clear()
     demo.tilemap.draw()
     demo.items.draw()
+    demo.enemies.draw()
+    // demo.enemies.drawDebug()
     demo.player.draw()
     // demo.items.drawDebug()
     // demo.world.drawDebug()
@@ -770,6 +1009,7 @@
       { id: 'tileset', type: 'image', src: 'set-1.png' },
       { id: 'player', type: 'image', src: 'player.png' },
       { id: 'fruit', type: 'image', src: 'fruit.png' },
+      { id: 'flying_enemy', type: 'image', src: 'flying-enemy.png' },
       { id: 'level1', type: 'json', src: 'level1.json' }
     ]
     preload(manifest).then(create).then(start)

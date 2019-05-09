@@ -87,5 +87,8 @@
     { "type": "fruit", "x": 160, "y": 144 },
     { "type": "fruit", "x": 96, "y": 32 },
     { "type": "fruit", "x": 32, "y": 112 }
+  ],
+  "enemies": [
+    { "type": "flying_enemy", "x": 260, "y": 100 }
   ]
 }
