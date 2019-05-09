@@ -85,7 +85,9 @@
     }
   }
 
-  const demo = {}
+  const demo = {
+    score: 0
+  }
 
   const resources = { images: {} }
 
@@ -403,17 +405,44 @@
 
     demo.items = {
       instances: [],
+      removed: [],
       update (deltaTime) {
         demo.items.instances.forEach(instance => demo.items.updateInstance(instance, deltaTime))
+        demo.items.removed.forEach(instance => {
+          const start = demo.items.instances.findIndex(inst => inst.id === instance.id)
+          const deleteCount = 1
+          if (start >= 0) {
+            demo.items.instances.splice(start, deleteCount)
+          }
+        })
+        demo.items.removed = []
       },
       draw () {
         demo.items.instances.forEach(demo.items.drawInstance)
       },
       updateInstance (instance, deltaTime) {
-
+        if (instance.type === 'fruit') {
+          const { playerCollider: collider } = demo
+          const { x, y, w, h } = collider
+          const bottom = y + h
+          const right = x + w
+          const { x: bx, y: by } = instance
+          // all items are assumed to be 16 x 16 here
+          const bw = 16
+          const bh = 16
+          if (!((bottom <= by) || (y >= by + bh) || (x >= bx + bw) || (right <= bx))) {
+            messages.add('increase-score', {...instance})
+            instance.removed = true
+            demo.items.removed.push(instance)
+          }
+        }
       },
       drawInstance (instance) {
-        const { type, x, y } = instance
+        const { type, x, y, removed } = instance
+        if (removed) {
+          // removed items should not be drawn
+          return
+        }
         const image = resources.images[type]
 
         blit({
@@ -632,6 +661,7 @@
 
   demo.start = () => {
     console.log('demo start')
+    demo.score = 0
     demo.player.animations[demo.player.currentAnimationName].playing = true
     level.load(1)
   }
@@ -650,9 +680,18 @@
     // demo.items.drawDebug()
     // demo.world.drawDebug()
     // demo.playerCollider.drawDebug()
+    screen.ctx.save()
+    screen.ctx.fillRect(0, 0, SCREEN_WIDTH, 10)
+    screen.ctx.font = '8px "Press Start 2P"'
+    screen.ctx.fillStyle = '#fff'
+    screen.ctx.textBaseline = 'top'
+    screen.ctx.fillText(`SCORE: ${demo.score}`, 1, 1)
+    screen.ctx.restore()
   }
 
   demo.restart = () => {
+    demo.score = 0
+
     level.load(demo.level.number)
 
     // reset the player collider
@@ -691,6 +730,11 @@
 
     if (message.type === 'restart') {
       demo.restart()
+      return true
+    } else if (message.type === 'increase-score') {
+      const points = message.data[0].type === 'fruit' ? 10 : 5
+      demo.score += points
+      // console.log(`scored ${points} points`)
       return true
     }
 
