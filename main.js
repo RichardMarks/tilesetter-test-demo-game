@@ -590,21 +590,39 @@
         collider && collider.update && typeof collider.update === 'function' && collider.update(deltaTime)
         sprite && sprite.update && typeof sprite.update === 'function' && sprite.update(deltaTime)
 
-        // if (instance.type === 'fruit') {
-        //   const { playerCollider: collider } = demo
-        //   const { x, y, w, h } = collider
-        //   const bottom = y + h
-        //   const right = x + w
-        //   const { x: bx, y: by } = instance
-        //   const image = resources.images[instance.type]
-        //   const bw = image.width
-        //   const bh = image.height
-        //   if (!((bottom <= by) || (y >= by + bh) || (x >= bx + bw) || (right <= bx))) {
-        //     console.log('collided with enemy')
-        //     instance.removed = true
-        //     demo.enemies.removed.push(instance)
-        //   }
-        // }
+        // collision with player results in damaging the player unless
+        // player is above the enemy and player is falling
+        const { playerCollider: pc } = demo
+        const { x, y, w, h } = pc
+        const bottom = y + h
+        const right = x + w
+        const { x: bx, y: by, w: bw, h: bh } = collider
+
+        if (!((bottom <= by) || (y >= by + bh) || (x >= bx + bw) || (right <= bx))) {
+          // console.log('collided with enemy')
+
+          // is the player going to damage/kill the enemy?
+          const isPlayerAboveEnemy = y < by
+          const isPlayerFalling = !pc.platform.onGround && pc.platform.ySpeed > 0
+          const playerWillTakeDamage = !(isPlayerAboveEnemy && isPlayerFalling)
+
+          if (playerWillTakeDamage) {
+            if (!instance.causingDamage) {
+              instance.causingDamage = true
+              demo.playerHealthBar.damage()
+            }
+          } else {
+            // player will "bounce" up a bit
+            pc.platform.ySpeed = -(pc.platform.jumpSpeed * 1.3)
+            pc.platform.isJumping = true
+            // enemies have no health, so die immediately
+            // todo - give enemies health
+            instance.removed = true
+            demo.enemies.removed.push(instance)
+          }
+        } else {
+          instance.causingDamage = false
+        }
       },
       drawInstance (instance) {
         const { sprite, removed } = instance
@@ -775,7 +793,7 @@
 
         // ground check
         const willBeOnGround = rectCollides(collider.x, collider.y + 1, collider.w, collider.h)
-        if (!player.onGround && willBeOnGround) {
+        if (!platform.onGround && willBeOnGround) {
           // landing
           player.resumeAnim()
         }
@@ -829,7 +847,7 @@
         }
 
         platform.xSpeed = clamp(platform.xSpeed, -platform.maxSpeed, platform.maxSpeed)
-        platform.ySpeed = clamp(platform.ySpeed, -platform.jumpSpeed, platform.gravity)
+        platform.ySpeed = clamp(platform.ySpeed, -platform.jumpSpeed * 2, platform.gravity)
 
         const moveX = platform.xSpeed * deltaTime
         const moveY = platform.ySpeed * deltaTime
@@ -892,6 +910,44 @@
       }
     }
 
+    demo.playerHealthBar = {
+      value: 5,
+      maxValue: 5,
+
+      damage () {
+        demo.playerHealthBar.value -= 1
+        if (demo.playerHealthBar.value < 0) {
+          demo.playerHealthBar.value = 0
+          // messages.add('player-death')
+          messages.add('restart')
+        }
+      },
+
+      restore () {
+        demo.playerHealthBar.value = demo.playerHealthBar.maxValue
+      },
+
+      draw () {
+        screen.ctx.save()
+        screen.ctx.font = '8px "Press Start 2P"'
+        screen.ctx.fillStyle = '#fff'
+        screen.ctx.textBaseline = 'top'
+        screen.ctx.textAlign = 'right'
+        screen.ctx.fillText('HEALTH:', ~~(SCREEN_WIDTH * 0.5), 1)
+
+        for (let i = 0; i < demo.playerHealthBar.maxValue; i += 1) {
+          if (i < demo.playerHealthBar.value) {
+            screen.ctx.fillStyle = '#f00'
+          } else {
+            screen.ctx.fillStyle = '#333'
+          }
+          const x = SCREEN_WIDTH * 0.5 + (i * 10)
+          screen.ctx.fillRect(~~(x), 1, 8, 8)
+        }
+        screen.ctx.restore()
+      }
+    }
+
     resolve()
   })
 
@@ -926,10 +982,13 @@
     screen.ctx.textBaseline = 'top'
     screen.ctx.fillText(`SCORE: ${demo.score}`, 1, 1)
     screen.ctx.restore()
+    demo.playerHealthBar.draw()
   }
 
   demo.restart = () => {
     demo.score = 0
+
+    demo.playerHealthBar.restore()
 
     level.load(demo.level.number)
 
