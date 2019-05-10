@@ -617,6 +617,7 @@
             pc.platform.isJumping = true
             // enemies have no health, so die immediately
             // todo - give enemies health
+            messages.add('increase-score', {...instance})
             instance.removed = true
             demo.enemies.removed.push(instance)
           }
@@ -1022,6 +1023,15 @@
     demo.player.mirror = false
   }
 
+  const getPoints = type => {
+    switch (type) {
+      case 'flying_enemy': return 100
+      case 'fruit': return 10
+      default:
+        return 5
+    }
+  }
+
   const handleMessage = message => {
     console.log('handleMessage got message')
     console.log({ message })
@@ -1030,7 +1040,7 @@
       demo.restart()
       return true
     } else if (message.type === 'increase-score') {
-      const points = message.data[0].type === 'fruit' ? 10 : 5
+      const points = getPoints(message.data[0].type)
       demo.score += points
       // console.log(`scored ${points} points`)
       return true
