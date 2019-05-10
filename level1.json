@@ -89,6 +89,9 @@
     { "type": "fruit", "x": 32, "y": 112 }
   ],
   "enemies": [
-    { "type": "flying_enemy", "x": 260, "y": 100 }
+    { "type": "flying_enemy", "x": 260, "y": 100 },
+    { "type": "spikes", "x": 220, "y": 179 },
+    { "type": "spikes", "x": 120, "y": 179 },
+    { "type": "spikes", "x": 320, "y": 179 }
   ]
 }

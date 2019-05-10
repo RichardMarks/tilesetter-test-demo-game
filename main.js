@@ -469,6 +469,19 @@
         return null
       },
       factories: {
+        spikes: (instanceData) => {
+          const { x, y, type } = instanceData
+          const enemy = {
+            ...instanceData,
+            sprite: animatedsprite.create({ x, y, w: 16, h: 16, imageId: type }),
+            collider: physicsbody.create({ x, y, w: 16, h: 16 }),
+          }
+          enemy.sprite.addAnimation('idle', animation.create({ name: 'idle', frames: [0], duration: 1 }))
+          enemy.sprite.setAnimation('idle')
+          enemy.isHazard = true
+          return enemy
+        },
+
         flying_enemy: (instanceData) => {
           const { x, y, type } = instanceData
           const enemy = {
@@ -601,25 +614,47 @@
         if (!((bottom <= by) || (y >= by + bh) || (x >= bx + bw) || (right <= bx))) {
           // console.log('collided with enemy')
 
-          // is the player going to damage/kill the enemy?
-          const isPlayerAboveEnemy = y < by
-          const isPlayerFalling = !pc.platform.onGround && pc.platform.ySpeed > 0
-          const playerWillTakeDamage = !(isPlayerAboveEnemy && isPlayerFalling)
-
-          if (playerWillTakeDamage) {
+          if (instance.isHazard) {
             if (!instance.causingDamage) {
               instance.causingDamage = true
               demo.playerHealthBar.damage()
+              // player will "bounce" up a bit, and left or right based on offset
+              pc.platform.ySpeed = -(pc.platform.jumpSpeed * 0.8)
+              pc.y -= 3
+              if (pc.x + pc.w < bx + (bw * 0.5)) {
+                pc.platform.xSpeed = -(pc.platform.maxSpeed)
+              } else if (pc.x > bx + (bw * 0.5)) {
+                pc.platform.xSpeed = (pc.platform.maxSpeed)
+              }
+              pc.platform.onGround = false
+              pc.platform.isJumping = true
+
+              // hazards cause damage once per second while colliding
+              setTimeout(() => {
+                instance.causingDamage = false
+              }, 1000)
             }
           } else {
-            // player will "bounce" up a bit
-            pc.platform.ySpeed = -(pc.platform.jumpSpeed * 1.3)
-            pc.platform.isJumping = true
-            // enemies have no health, so die immediately
-            // todo - give enemies health
-            messages.add('increase-score', {...instance})
-            instance.removed = true
-            demo.enemies.removed.push(instance)
+            // is the player going to damage/kill the enemy?
+            const isPlayerAboveEnemy = y < by
+            const isPlayerFalling = !pc.platform.onGround && pc.platform.ySpeed > 0
+            const playerWillTakeDamage = !(isPlayerAboveEnemy && isPlayerFalling)
+
+            if (playerWillTakeDamage) {
+              if (!instance.causingDamage) {
+                instance.causingDamage = true
+                demo.playerHealthBar.damage()
+              }
+            } else {
+              // player will "bounce" up a bit
+              pc.platform.ySpeed = -(pc.platform.jumpSpeed * 1.3)
+              pc.platform.isJumping = true
+              // enemies have no health, so die immediately
+              // todo - give enemies health
+              messages.add('increase-score', {...instance})
+              instance.removed = true
+              demo.enemies.removed.push(instance)
+            }
           }
         } else {
           instance.causingDamage = false
@@ -841,7 +876,7 @@
           platform.xSpeed -= platform.acceleration * deltaTime
         }
 
-        if (!input.right && !input.left) {
+        if (!platform.isJumping && !input.right && !input.left) {
           platform.xSpeed = 0
           nextAnim = 'idle'
           animationChange = true
@@ -1076,6 +1111,7 @@
     console.log('DOM ready')
     const manifest = [
       { id: 'tileset', type: 'image', src: 'set-1.png' },
+      { id: 'spikes', type: 'image', src: 'spikes.png' },
       { id: 'player', type: 'image', src: 'player.png' },
       { id: 'fruit', type: 'image', src: 'fruit.png' },
       { id: 'flying_enemy', type: 'image', src: 'flying-enemy.png' },
